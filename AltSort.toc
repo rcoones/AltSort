@@ -1,0 +1,8 @@
+## Interface: 120001
+## Title: Alt Sort
+## Notes: Sort your bags instantly with Alt+S.
+## Author: Strik4ia
+## Version: 1.0.0
+## Category: Bags & Inventory
+
+AltSort.lua
