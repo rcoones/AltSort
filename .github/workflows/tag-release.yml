@@ -1,0 +1,44 @@
+name: Tag release
+
+# On every merge to main, create the next version tag. The CurseForge
+# packaging webhook sees the new tag and builds a release file.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency: tag-release
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create next tag
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          # Latest plain X.Y.Z tag (ignores alpha/beta tags)
+          latest=$(git tag --list | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)
+
+          if [ -z "$latest" ]; then
+            # No releases yet: first release is the version being shipped now.
+            next="1.0.1"
+          else
+            IFS=. read -r major minor patch <<< "$latest"
+            # Include #major or #minor in the merge commit message to bump those;
+            # otherwise the patch number is bumped.
+            if   grep -qi '#major' <<< "$COMMIT_MSG"; then next="$((major + 1)).0.0"
+            elif grep -qi '#minor' <<< "$COMMIT_MSG"; then next="${major}.$((minor + 1)).0"
+            else next="${major}.${minor}.$((patch + 1))"
+            fi
+          fi
+
+          echo "Tagging $next"
+          git tag "$next"
+          git push origin "$next"
