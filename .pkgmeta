@@ -1,0 +1,6 @@
+package-as: AltSort
+
+ignore:
+  - .gitignore
+  - .github
+  - README.md
