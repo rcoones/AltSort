@@ -4,6 +4,7 @@
 ## Author: Strik4ia
 ## Version: @project-version@
 ## X-Curse-Project-ID: 1712916
+## X-Wago-ID: aNerrW62
 ## Category: Bags & Inventory
 ## SavedVariables: AltSortDB
 

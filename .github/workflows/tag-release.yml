@@ -1,7 +1,10 @@
 name: Tag release
 
 # On every merge to main, create the next version tag. The CurseForge
-# packaging webhook sees the new tag and builds a release file.
+# packaging webhook sees the new tag and builds a release file. The same
+# run then packages the tag and uploads it to Wago.
+# (Tags pushed with GITHUB_TOKEN don't trigger other workflows, so the
+# Wago release is a job here rather than a separate on: push: tags workflow.)
 on:
   push:
     branches: [main]
@@ -14,12 +17,15 @@ concurrency: tag-release
 jobs:
   tag:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Create next tag
+        id: tag
         env:
           COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
@@ -42,3 +48,34 @@ jobs:
           echo "Tagging $next"
           git tag "$next"
           git push origin "$next"
+          echo "tag=$next" >> "$GITHUB_OUTPUT"
+
+  wago:
+    needs: tag
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.tag.outputs.tag }}
+
+      # Wago's "Multiple" game version mode wants one zip per game version,
+      # named with a suffix (Retail: AltSort-X.Y.Z.zip, Forever: ...-forever.zip).
+      # The packager adds the suffix itself when -g names a non-retail type.
+      # Uploads use X-Wago-ID from the .toc. CurseForge is handled by its own
+      # webhook, so CF_API_KEY is intentionally not set here and the packager
+      # skips that upload.
+      - name: Package and upload Retail to Wago
+        uses: BigWigsMods/packager@v2
+        with:
+          args: -g retail
+        env:
+          WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
+
+      - name: Package and upload Forever to Wago
+        uses: BigWigsMods/packager@v2
+        with:
+          args: -g forever
+        env:
+          WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
