@@ -1,5 +1,5 @@
 <Bindings>
-    <Binding name="ALTSORT_SORT" header="ALTSORT" category="ADDONS">
+    <Binding name="ALTSORT_SORT" header="ALTSORT" category="AltSort">
         C_Container.SortBags()
     </Binding>
 </Bindings>
