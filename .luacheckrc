@@ -1,6 +1,9 @@
 std = "lua51"
 max_line_length = 120
 
+-- CI installs luarocks dependencies into the workspace
+exclude_files = { ".luarocks" }
+
 -- Globals this addon defines
 globals = {
     "AltSortDB",
