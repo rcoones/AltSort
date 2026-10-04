@@ -1,0 +1,31 @@
+name: CI
+
+# Lint and unit-test the addon. Runs on pull requests and is also called by
+# tag-release.yml so a release can never be cut from a failing main.
+on:
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: leafo/gh-actions-lua@v10
+        with:
+          luaVersion: "5.1"
+
+      - uses: leafo/gh-actions-luarocks@v4
+
+      - name: Install tools
+        run: luarocks install luacheck && luarocks install busted
+
+      - name: Lint
+        run: luacheck .
+
+      - name: Test
+        run: busted
