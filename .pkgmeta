@@ -4,3 +4,6 @@ ignore:
   - .gitignore
   - .github
   - README.md
+  - .luacheckrc
+  - .busted
+  - spec
