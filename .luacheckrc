@@ -14,8 +14,11 @@ globals = {
 
 -- WoW API globals this addon uses
 read_globals = {
+    "BankFrame",
+    "BankPanel",
     "C_Container",
     "CreateFrame",
+    "Enum",
     "GetBindingAction",
     "GetCurrentBindingSet",
     "GetCursorInfo",
