@@ -78,11 +78,9 @@ describe("AltSort", function()
 
         if opts.container == "error" then
             setglobal("C_Container", { SortBags = function() error("boom") end })
-        elseif opts.container == "none" then
-            -- leave C_Container unset
         elseif opts.container == "noBank" then
             setglobal("C_Container", { SortBags = function() client.sortCalls = client.sortCalls + 1 end })
-        else
+        elseif opts.container ~= "none" then
             setglobal("C_Container", {
                 SortBags = function() client.sortCalls = client.sortCalls + 1 end,
                 SortBankBags = function() client.bankSortCalls = client.bankSortCalls + 1 end,
