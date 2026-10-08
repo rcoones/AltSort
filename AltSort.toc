@@ -1,6 +1,6 @@
 ## Interface: 120100, 16001
 ## Title: Alt Sort
-## Notes: Sort your bags instantly with Alt+S.
+## Notes: Sort your bags (or bank) instantly with Alt+S.
 ## Author: Strik4ia
 ## Version: @project-version@
 ## X-Curse-Project-ID: 1712916

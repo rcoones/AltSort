@@ -5,7 +5,8 @@ A tiny World of Warcraft addon that sorts your bags with **Alt+S**.
 ## Features
 
 - Press **Alt+S** to sort your bags.
-- Uses Blizzard's built-in bag sorting functionality.
+- Open your bank (or the warband bank) and press **Alt+S** to sort it instead — same key, no extra bindings.
+- Uses Blizzard's built-in sorting functionality.
 - Rebindable in **Key Bindings > AddOns > Alt Sort**.
 - No slash commands.
 - Extremely lightweight.

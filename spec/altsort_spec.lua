@@ -4,7 +4,8 @@
 local STUBBED = {
     "AltSortDB", "AltSort_Sort", "C_Container", "SortBags", "CreateFrame",
     "InCombatLockdown", "GetCursorInfo", "GetBindingAction", "SetBinding",
-    "SaveBindings", "GetCurrentBindingSet", "print",
+    "SaveBindings", "GetCurrentBindingSet", "print", "Enum",
+    "BankFrame", "BankPanel",
     "BINDING_HEADER_ALTSORT", "BINDING_NAME_ALTSORT_SORT",
 }
 
@@ -16,7 +17,8 @@ describe("AltSort", function()
     local saved, client, frame
 
     -- Builds the fake client. opts: db, combat, cursor, bound, setBindingFails,
-    -- container ("none" | "error" | default working), legacySort.
+    -- container ("none" | "error" | "noBank" | default working), legacySort,
+    -- enum (false to simulate a client without Enum.PlayerInteractionType).
     local function load_addon(opts)
         opts = opts or {}
         client = {
@@ -28,11 +30,14 @@ describe("AltSort", function()
             saveCalls = 0,
             sortCalls = 0,
             legacySortCalls = 0,
+            bankSortCalls = 0,
+            accountBankSortCalls = 0,
             printed = {},
         }
         frame = { events = {}, scripts = {}, unregistered = false }
 
         function frame:RegisterEvent(event) self.events[event] = true end
+        function frame:UnregisterEvent(event) self.events[event] = nil end
         function frame:SetScript(name, fn) self.scripts[name] = fn end
         function frame:UnregisterAllEvents()
             self.events = {}
@@ -54,10 +59,35 @@ describe("AltSort", function()
         setglobal("GetCurrentBindingSet", function() return 1 end)
         setglobal("print", function(msg) client.printed[#client.printed + 1] = msg end)
 
+        if opts.enum == false then
+            setglobal("Enum", nil)
+        else
+            setglobal("Enum", {
+                PlayerInteractionType = {
+                    Banker = 8,
+                    GuildBanker = 10,
+                    CharacterBanker = 67,
+                    AccountBanker = 68,
+                },
+                BankType = {
+                    Character = 0,
+                    Account = 1,
+                },
+            })
+        end
+
         if opts.container == "error" then
             setglobal("C_Container", { SortBags = function() error("boom") end })
-        elseif opts.container ~= "none" then
+        elseif opts.container == "none" then
+            -- leave C_Container unset
+        elseif opts.container == "noBank" then
             setglobal("C_Container", { SortBags = function() client.sortCalls = client.sortCalls + 1 end })
+        else
+            setglobal("C_Container", {
+                SortBags = function() client.sortCalls = client.sortCalls + 1 end,
+                SortBankBags = function() client.bankSortCalls = client.bankSortCalls + 1 end,
+                SortAccountBankBags = function() client.accountBankSortCalls = client.accountBankSortCalls + 1 end,
+            })
         end
         if opts.legacySort then
             setglobal("SortBags", function() client.legacySortCalls = client.legacySortCalls + 1 end)
@@ -66,8 +96,8 @@ describe("AltSort", function()
         dofile("AltSort.lua")
     end
 
-    local function fire(event)
-        frame.scripts.OnEvent(frame, event)
+    local function fire(event, arg1)
+        frame.scripts.OnEvent(frame, event, arg1)
     end
 
     before_each(function()
@@ -154,14 +184,15 @@ describe("AltSort", function()
             assert.are.equal("ALTSORT_SORT", client.bound["ALT-S"])
             assert.are.equal(1, client.saveCalls)
             assert.is_true(AltSortDB.seeded)
-            assert.is_true(frame.unregistered)
+            assert.is_nil(frame.events["PLAYER_LOGIN"])
+            assert.is_nil(frame.events["PLAYER_REGEN_ENABLED"])
         end)
 
         it("does nothing once seeded", function()
             load_addon({ db = { seeded = true } })
             fire("PLAYER_LOGIN")
             assert.are.equal(0, client.setBindingCalls)
-            assert.is_true(frame.unregistered)
+            assert.is_nil(frame.events["PLAYER_LOGIN"])
         end)
 
         it("treats an existing AltSort binding as done without rebinding", function()
@@ -186,7 +217,7 @@ describe("AltSort", function()
             fire("PLAYER_LOGIN")
             assert.are.equal(0, client.setBindingCalls)
             assert.is_falsy(AltSortDB.seeded)
-            assert.is_false(frame.unregistered)
+            assert.is_true(frame.events["PLAYER_LOGIN"])
 
             client.combat = false
             fire("PLAYER_REGEN_ENABLED")
@@ -199,7 +230,96 @@ describe("AltSort", function()
             fire("PLAYER_LOGIN")
             assert.are.equal(0, client.saveCalls)
             assert.is_falsy(AltSortDB.seeded)
-            assert.is_false(frame.unregistered)
+            assert.is_true(frame.events["PLAYER_LOGIN"])
+        end)
+    end)
+
+    describe("bank-aware sorting", function()
+        it("sorts the character bank when the CharacterBanker interaction opens", function()
+            load_addon()
+            fire("PLAYER_INTERACTION_MANAGER_FRAME_SHOW", Enum.PlayerInteractionType.CharacterBanker)
+            AltSort_Sort()
+            assert.are.equal(1, client.bankSortCalls)
+            assert.are.equal(0, client.sortCalls)
+        end)
+
+        it("sorts the warband bank when the AccountBanker interaction opens", function()
+            load_addon()
+            fire("PLAYER_INTERACTION_MANAGER_FRAME_SHOW", Enum.PlayerInteractionType.AccountBanker)
+            AltSort_Sort()
+            assert.are.equal(1, client.accountBankSortCalls)
+            assert.are.equal(0, client.sortCalls)
+        end)
+
+        it("treats the classic combined Banker interaction as the character bank", function()
+            load_addon()
+            fire("PLAYER_INTERACTION_MANAGER_FRAME_SHOW", Enum.PlayerInteractionType.Banker)
+            AltSort_Sort()
+            assert.are.equal(1, client.bankSortCalls)
+        end)
+
+        it("ignores the guild banker interaction and keeps sorting bags", function()
+            load_addon()
+            fire("PLAYER_INTERACTION_MANAGER_FRAME_SHOW", Enum.PlayerInteractionType.GuildBanker)
+            AltSort_Sort()
+            assert.are.equal(1, client.sortCalls)
+            assert.are.equal(0, client.bankSortCalls)
+        end)
+
+        it("goes back to sorting bags once the bank interaction hides", function()
+            load_addon()
+            fire("PLAYER_INTERACTION_MANAGER_FRAME_SHOW", Enum.PlayerInteractionType.CharacterBanker)
+            fire("PLAYER_INTERACTION_MANAGER_FRAME_HIDE", Enum.PlayerInteractionType.CharacterBanker)
+            AltSort_Sort()
+            assert.are.equal(1, client.sortCalls)
+            assert.are.equal(0, client.bankSortCalls)
+        end)
+
+        it("falls back to BANKFRAME_OPENED/CLOSED on clients without the interaction manager", function()
+            load_addon({ enum = false })
+            fire("BANKFRAME_OPENED")
+            AltSort_Sort()
+            assert.are.equal(1, client.bankSortCalls)
+
+            fire("BANKFRAME_CLOSED")
+            AltSort_Sort()
+            assert.are.equal(1, client.sortCalls)
+        end)
+
+        it("prints a message when the bank is open but bank sorting isn't available", function()
+            load_addon({ container = "noBank" })
+            fire("PLAYER_INTERACTION_MANAGER_FRAME_SHOW", Enum.PlayerInteractionType.CharacterBanker)
+            AltSort_Sort()
+            assert.are.equal(0, client.sortCalls)
+            assert.are.equal(1, #client.printed)
+        end)
+
+        it("follows a tab switch to the warband bank inside an already-open bank frame", function()
+            -- Switching tabs inside an open bank does not re-fire the
+            -- interaction-manager event, only BankFrame's own state.
+            load_addon()
+            fire("PLAYER_INTERACTION_MANAGER_FRAME_SHOW", Enum.PlayerInteractionType.CharacterBanker)
+            setglobal("BankFrame", { GetActiveBankType = function() return Enum.BankType.Account end })
+            AltSort_Sort()
+            assert.are.equal(1, client.accountBankSortCalls)
+            assert.are.equal(0, client.bankSortCalls)
+        end)
+
+        it("follows a tab switch back to the character bank inside an already-open bank frame", function()
+            load_addon()
+            fire("PLAYER_INTERACTION_MANAGER_FRAME_SHOW", Enum.PlayerInteractionType.AccountBanker)
+            setglobal("BankFrame", { GetActiveBankType = function() return Enum.BankType.Character end })
+            AltSort_Sort()
+            assert.are.equal(1, client.bankSortCalls)
+            assert.are.equal(0, client.accountBankSortCalls)
+        end)
+
+        it("falls back to the interaction-tracked bank kind when the live bank type can't be read", function()
+            load_addon()
+            fire("PLAYER_INTERACTION_MANAGER_FRAME_SHOW", Enum.PlayerInteractionType.AccountBanker)
+            setglobal("BankFrame", { GetActiveBankType = function() error("not ready") end })
+            AltSort_Sort()
+            assert.are.equal(1, client.accountBankSortCalls)
         end)
     end)
 end)
