@@ -79,9 +79,10 @@ local function GetSorter()
     return (C_Container and C_Container.SortBags) or SortBags, "bags"
 end
 
--- Called by the key binding (see Bindings.xml). Everything that can go wrong
--- is checked here so a keypress never raises a Lua error.
-function AltSort_Sort()
+-- Everything that can go wrong is checked here so neither the key binding nor
+-- the slash command can raise a Lua error. requireBank is for `/altsort bank`:
+-- refuse (rather than quietly sorting bags) when no bank is open.
+local function DoSort(requireBank)
     if InCombatLockdown() then
         Print("Can't sort in combat.")
         return
@@ -89,6 +90,11 @@ function AltSort_Sort()
 
     if GetCursorInfo() then
         Print("Drop the item on your cursor first.")
+        return
+    end
+
+    if requireBank and not bankOpen then
+        Print("Open your bank first.")
         return
     end
 
@@ -102,6 +108,11 @@ function AltSort_Sort()
     if not ok then
         Print("Sorting failed: " .. tostring(err))
     end
+end
+
+-- Called by the key binding (see Bindings.xml).
+function AltSort_Sort()
+    DoSort(false)
 end
 
 local function InitDB()
@@ -143,6 +154,50 @@ local function TrySeedBinding()
 end
 
 local frame = CreateFrame("Frame")
+
+-- Forget that the default key was ever seeded (or that we complained about it)
+-- and try again right away. Re-registers the events TrySeedBinding retires.
+local function ResetBinding()
+    InitDB()
+    AltSortDB.seeded = nil
+    AltSortDB.conflictNotified = nil
+
+    if TrySeedBinding() then
+        Print("Reset. " .. DEFAULT_KEY .. " is bound to Sort Bags / Bank.")
+        return
+    end
+
+    frame:RegisterEvent("PLAYER_LOGIN")
+    frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    if InCombatLockdown() then
+        Print("Reset. " .. DEFAULT_KEY .. " will be bound when combat ends.")
+    end
+end
+
+local function PrintHelp()
+    Print("/altsort sort - sort bags, or the bank if it is open (same as " .. DEFAULT_KEY .. ")")
+    Print("/altsort bank - sort the bank (must be open)")
+    Print("/altsort reset - re-apply the default " .. DEFAULT_KEY .. " binding")
+    Print("/altsort help - show this list")
+end
+
+local COMMANDS = {
+    sort = function() DoSort(false) end,
+    bank = function() DoSort(true) end,
+    reset = ResetBinding,
+    help = PrintHelp,
+}
+
+SLASH_ALTSORT1 = "/altsort"
+SlashCmdList["ALTSORT"] = function(msg)
+    local command = (msg or ""):match("^%s*(.-)%s*$"):lower()
+    local handler = COMMANDS[command]
+    if handler then
+        handler()
+    else
+        PrintHelp()
+    end
+end
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_REGEN_ENABLED")
 frame:RegisterEvent("PLAYER_INTERACTION_MANAGER_FRAME_SHOW")
