@@ -10,6 +10,8 @@ globals = {
     "AltSort_Sort",
     "BINDING_HEADER_ALTSORT",
     "BINDING_NAME_ALTSORT_SORT",
+    "SLASH_ALTSORT1",
+    "SlashCmdList",
 }
 
 -- WoW API globals this addon uses

@@ -5,7 +5,7 @@ local STUBBED = {
     "AltSortDB", "AltSort_Sort", "C_Container", "SortBags", "CreateFrame",
     "InCombatLockdown", "GetCursorInfo", "GetBindingAction", "SetBinding",
     "SaveBindings", "GetCurrentBindingSet", "print", "Enum",
-    "BankFrame", "BankPanel",
+    "BankFrame", "BankPanel", "SlashCmdList", "SLASH_ALTSORT1",
     "BINDING_HEADER_ALTSORT", "BINDING_NAME_ALTSORT_SORT",
 }
 
@@ -58,6 +58,7 @@ describe("AltSort", function()
         setglobal("SaveBindings", function() client.saveCalls = client.saveCalls + 1 end)
         setglobal("GetCurrentBindingSet", function() return 1 end)
         setglobal("print", function(msg) client.printed[#client.printed + 1] = msg end)
+        setglobal("SlashCmdList", {})
 
         if opts.enum == false then
             setglobal("Enum", nil)
@@ -303,8 +304,7 @@ describe("AltSort", function()
             assert.are.equal(0, client.bankSortCalls)
         end)
 
-        it("follows a tab switch back to the character bank inside an already-open bank frame", function()
-            load_addon()
+        it("follows a tab switch back to the character bank inside an already-open bank frame", function()            load_addon()
             fire("PLAYER_INTERACTION_MANAGER_FRAME_SHOW", Enum.PlayerInteractionType.AccountBanker)
             setglobal("BankFrame", { GetActiveBankType = function() return Enum.BankType.Character end })
             AltSort_Sort()
@@ -318,6 +318,110 @@ describe("AltSort", function()
             setglobal("BankFrame", { GetActiveBankType = function() error("not ready") end })
             AltSort_Sort()
             assert.are.equal(1, client.accountBankSortCalls)
+        end)
+    end)
+
+    describe("/altsort slash command", function()
+        local function slash(msg)
+            SlashCmdList["ALTSORT"](msg)
+        end
+
+        it("registers /altsort", function()
+            load_addon()
+            assert.are.equal("/altsort", SLASH_ALTSORT1)
+            assert.are.equal("function", type(SlashCmdList["ALTSORT"]))
+        end)
+
+        it("sort sorts bags when no bank is open", function()
+            load_addon()
+            slash("sort")
+            assert.are.equal(1, client.sortCalls)
+        end)
+
+        it("sort is context-aware and sorts the bank when it is open", function()
+            load_addon()
+            fire("PLAYER_INTERACTION_MANAGER_FRAME_SHOW", Enum.PlayerInteractionType.CharacterBanker)
+            slash("sort")
+            assert.are.equal(1, client.bankSortCalls)
+            assert.are.equal(0, client.sortCalls)
+        end)
+
+        it("is case- and whitespace-insensitive", function()
+            load_addon()
+            slash("  SORT  ")
+            assert.are.equal(1, client.sortCalls)
+        end)
+
+        it("bank sorts the bank when it is open", function()
+            load_addon()
+            fire("PLAYER_INTERACTION_MANAGER_FRAME_SHOW", Enum.PlayerInteractionType.AccountBanker)
+            slash("bank")
+            assert.are.equal(1, client.accountBankSortCalls)
+        end)
+
+        it("bank refuses, without sorting bags, when no bank is open", function()
+            load_addon()
+            slash("bank")
+            assert.are.equal(0, client.sortCalls)
+            assert.are.equal(0, client.bankSortCalls)
+            assert.are.equal(1, #client.printed)
+        end)
+
+        it("sort still honours the combat guard", function()
+            load_addon({ combat = true })
+            slash("sort")
+            assert.are.equal(0, client.sortCalls)
+            assert.are.equal(1, #client.printed)
+        end)
+
+        it("help lists the commands without sorting", function()
+            load_addon()
+            slash("help")
+            assert.are.equal(4, #client.printed)
+            assert.are.equal(0, client.sortCalls)
+        end)
+
+        it("shows help for an empty or unknown command", function()
+            load_addon()
+            slash("")
+            slash("frobnicate")
+            assert.are.equal(8, #client.printed)
+            assert.are.equal(0, client.sortCalls)
+        end)
+
+        it("reset re-applies the default binding and registers events again", function()
+            load_addon()
+            fire("PLAYER_LOGIN")
+            assert.is_true(AltSortDB.seeded)
+            client.bound["ALT-S"] = nil
+
+            slash("reset")
+            assert.are.equal("ALTSORT_SORT", client.bound["ALT-S"])
+            assert.is_true(AltSortDB.seeded)
+            assert.are.equal(2, client.setBindingCalls)
+        end)
+
+        it("reset retries the notification when the key is taken", function()
+            load_addon({ bound = { ["ALT-S"] = "SOMETHING_ELSE" } })
+            fire("PLAYER_LOGIN")
+            assert.are.equal(1, #client.printed)
+
+            slash("reset")
+            assert.are.equal("SOMETHING_ELSE", client.bound["ALT-S"])
+            assert.is_falsy(AltSortDB.seeded)
+            assert.is_true(frame.events["PLAYER_LOGIN"])
+            assert.are.equal(2, #client.printed)
+        end)
+
+        it("reset in combat defers binding until combat ends", function()
+            load_addon({ combat = true })
+            slash("reset")
+            assert.are.equal(0, client.setBindingCalls)
+            assert.is_true(frame.events["PLAYER_REGEN_ENABLED"])
+
+            client.combat = false
+            fire("PLAYER_REGEN_ENABLED")
+            assert.are.equal("ALTSORT_SORT", client.bound["ALT-S"])
         end)
     end)
 end)
