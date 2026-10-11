@@ -6,7 +6,7 @@ local STUBBED = {
     "InCombatLockdown", "GetCursorInfo", "GetBindingAction", "SetBinding",
     "SaveBindings", "GetCurrentBindingSet", "print", "Enum",
     "BankFrame", "BankPanel", "SlashCmdList", "SLASH_ALTSORT1",
-    "BINDING_CATEGORY_ALTSORT", "BINDING_HEADER_ALTSORT", "BINDING_NAME_ALTSORT_SORT",
+    "BINDING_HEADER_ALTSORT", "BINDING_NAME_ALTSORT_SORT",
 }
 
 local function setglobal(name, value)
