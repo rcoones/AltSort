@@ -8,6 +8,7 @@ exclude_files = { ".luarocks" }
 globals = {
     "AltSortDB",
     "AltSort_Sort",
+    "BINDING_CATEGORY_ALTSORT",
     "BINDING_HEADER_ALTSORT",
     "BINDING_NAME_ALTSORT_SORT",
     "SLASH_ALTSORT1",

@@ -1,4 +1,5 @@
 BINDING_HEADER_ALTSORT = "Alt Sort"
+BINDING_CATEGORY_ALTSORT = "Alt Sort"
 BINDING_NAME_ALTSORT_SORT = "Sort Bags / Bank"
 
 local DEFAULT_KEY = "ALT-S"
@@ -144,7 +145,7 @@ local function TrySeedBinding()
     elseif current ~= BINDING_ACTION then
         if not AltSortDB.conflictNotified then
             AltSortDB.conflictNotified = true
-            Print(DEFAULT_KEY .. " is already in use. Bind Sort Bags under Key Bindings > AddOns > AltSort.")
+            Print(DEFAULT_KEY .. " is already in use. Bind Sort Bags under Key Bindings > Alt Sort.")
         end
         return false
     end
