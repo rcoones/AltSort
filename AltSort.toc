@@ -8,4 +8,6 @@
 ## Category: Bags & Inventory
 ## SavedVariables: AltSortDB
 
+## IconTexture: Interface\Addons\AltSort\AltSort.tga
+
 AltSort.lua
