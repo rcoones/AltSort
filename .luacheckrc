@@ -29,6 +29,7 @@ read_globals = {
     "LibStub",
     "SaveBindings",
     "SetBinding",
+    "Settings",
     "SortBags",
 }
 
