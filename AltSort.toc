@@ -1,4 +1,4 @@
-## Interface: 120107, 16001
+## Interface: 120105, 120107, 16001
 ## Title: Alt Sort
 ## Notes: Sort your bags (or bank) instantly with Alt+S.
 ## Author: Strik4ia
