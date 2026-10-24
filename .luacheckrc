@@ -1,8 +1,11 @@
 std = "lua51"
 max_line_length = 120
 
--- CI installs luarocks dependencies into the workspace
-exclude_files = { ".luarocks" }
+-- Ace3 callbacks are methods, so an unused self is normal
+ignore = { "212/self" }
+
+-- CI installs luarocks dependencies into the workspace; Libs/ is vendored Ace3
+exclude_files = { ".luarocks", "Libs" }
 
 -- Globals this addon defines
 globals = {
@@ -10,8 +13,6 @@ globals = {
     "AltSort_Sort",
     "BINDING_HEADER_ALTSORT",
     "BINDING_NAME_ALTSORT_SORT",
-    "SLASH_ALTSORT1",
-    "SlashCmdList",
 }
 
 -- WoW API globals this addon uses
@@ -25,6 +26,7 @@ read_globals = {
     "GetCurrentBindingSet",
     "GetCursorInfo",
     "InCombatLockdown",
+    "LibStub",
     "SaveBindings",
     "SetBinding",
     "SortBags",
@@ -33,4 +35,10 @@ read_globals = {
 -- Specs stub the WoW API by assigning globals dynamically
 files["spec"] = {
     std = "+busted",
+    globals = { "SLASH_ACECONSOLE_ALTSORT1", "SlashCmdList" },
+}
+
+-- Translated strings are one line each and can't be wrapped
+files["Locales"] = {
+    max_line_length = false,
 }

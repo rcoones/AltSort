@@ -1,9 +1,20 @@
-BINDING_HEADER_ALTSORT = "Alt Sort"
-BINDING_NAME_ALTSORT_SORT = "Sort Bags / Bank"
+local AltSort = LibStub("AceAddon-3.0"):NewAddon("AltSort", "AceEvent-3.0", "AceConsole-3.0")
+local L = LibStub("AceLocale-3.0"):GetLocale("AltSort")
+
+BINDING_HEADER_ALTSORT = L["Alt Sort"]
+BINDING_NAME_ALTSORT_SORT = L["Sort Bags / Bank"]
 
 local DEFAULT_KEY = "ALT-S"
 local BINDING_ACTION = "ALTSORT_SORT"
 local DB_VERSION = 1
+
+local DB_DEFAULTS = {
+    global = {
+        dbVersion = DB_VERSION,
+        seeded = false,
+        conflictNotified = false,
+    },
+}
 
 local function Print(msg)
     print("|cff33ff99AltSort:|r " .. msg)
@@ -84,29 +95,29 @@ end
 -- refuse (rather than quietly sorting bags) when no bank is open.
 local function DoSort(requireBank)
     if InCombatLockdown() then
-        Print("Can't sort in combat.")
+        Print(L["Can't sort in combat."])
         return
     end
 
     if GetCursorInfo() then
-        Print("Drop the item on your cursor first.")
+        Print(L["Drop the item on your cursor first."])
         return
     end
 
     if requireBank and not bankOpen then
-        Print("Open your bank first.")
+        Print(L["Open your bank first."])
         return
     end
 
     local sort, what = GetSorter()
     if type(sort) ~= "function" then
-        Print("Sorting the " .. what .. " isn't available on this client.")
+        Print(L["Sorting the %s isn't available on this client."]:format(L[what]))
         return
     end
 
     local ok, err = pcall(sort)
     if not ok then
-        Print("Sorting failed: " .. tostring(err))
+        Print(L["Sorting failed: %s"]:format(tostring(err)))
     end
 end
 
@@ -115,18 +126,39 @@ function AltSort_Sort()
     DoSort(false)
 end
 
-local function InitDB()
+-- AceDB treats AltSortDB as its own saved-variable root, so a corrupt value
+-- has to be replaced before it sees it. Before AceDB, the flags below lived
+-- at the top level of AltSortDB; carry them into db.global once so nobody has
+-- the default key re-seeded over their own binding choice.
+local LEGACY_KEYS = { "seeded", "conflictNotified", "version" }
+
+function AltSort:InitDB()
     if type(AltSortDB) ~= "table" then
         AltSortDB = {}
     end
-    AltSortDB.version = AltSortDB.version or DB_VERSION
+
+    local legacy = {}
+    for _, key in ipairs(LEGACY_KEYS) do
+        legacy[key] = AltSortDB[key]
+        AltSortDB[key] = nil
+    end
+
+    self.db = LibStub("AceDB-3.0"):New("AltSortDB", DB_DEFAULTS, true)
+
+    if legacy.seeded then
+        self.db.global.seeded = true
+    end
+    if legacy.conflictNotified then
+        self.db.global.conflictNotified = true
+    end
 end
 
 -- Seed the default keyboard hotkey. Once it succeeds the user owns the binding
 -- (changing or clearing it in Key Bindings is always respected). Returns true
 -- when seeding is finished and no further attempts are needed.
-local function TrySeedBinding()
-    if AltSortDB.seeded then
+function AltSort:TrySeedBinding()
+    local global = self.db.global
+    if global.seeded then
         return true
     end
 
@@ -142,88 +174,94 @@ local function TrySeedBinding()
         end
         SaveBindings(GetCurrentBindingSet())
     elseif current ~= BINDING_ACTION then
-        if not AltSortDB.conflictNotified then
-            AltSortDB.conflictNotified = true
-            Print(DEFAULT_KEY .. " is already in use. Bind Sort Bags under Key Bindings > Alt Sort.")
+        if not global.conflictNotified then
+            global.conflictNotified = true
+            Print(L["%s is already in use. Bind Sort Bags under Key Bindings > Alt Sort."]:format(DEFAULT_KEY))
         end
         return false
     end
 
-    AltSortDB.seeded = true
+    global.seeded = true
     return true
 end
 
-local frame = CreateFrame("Frame")
-
 -- Forget that the default key was ever seeded (or that we complained about it)
--- and try again right away. Re-registers the events TrySeedBinding retires.
-local function ResetBinding()
-    InitDB()
-    AltSortDB.seeded = nil
-    AltSortDB.conflictNotified = nil
+-- and try again right away. Re-registers the event TrySeedBinding retires.
+function AltSort:ResetBinding()
+    local global = self.db.global
+    global.seeded = false
+    global.conflictNotified = false
 
-    if TrySeedBinding() then
-        Print("Reset. " .. DEFAULT_KEY .. " is bound to Sort Bags / Bank.")
+    if self:TrySeedBinding() then
+        Print(L["Reset. %s is bound to Sort Bags / Bank."]:format(DEFAULT_KEY))
         return
     end
 
-    frame:RegisterEvent("PLAYER_LOGIN")
-    frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    self:RegisterEvent("PLAYER_REGEN_ENABLED")
     if InCombatLockdown() then
-        Print("Reset. " .. DEFAULT_KEY .. " will be bound when combat ends.")
+        Print(L["Reset. %s will be bound when combat ends."]:format(DEFAULT_KEY))
     end
 end
 
-local function PrintHelp()
-    Print("/altsort sort - sort bags, or the bank if it is open (same as " .. DEFAULT_KEY .. ")")
-    Print("/altsort bank - sort the bank (must be open)")
-    Print("/altsort reset - re-apply the default " .. DEFAULT_KEY .. " binding")
-    Print("/altsort help - show this list")
+function AltSort:PrintHelp()
+    Print(L["/altsort sort - sort bags, or the bank if it is open (same as %s)"]:format(DEFAULT_KEY))
+    Print(L["/altsort bank - sort the bank (must be open)"])
+    Print(L["/altsort reset - re-apply the default %s binding"]:format(DEFAULT_KEY))
+    Print(L["/altsort help - show this list"])
 end
 
 local COMMANDS = {
     sort = function() DoSort(false) end,
     bank = function() DoSort(true) end,
-    reset = ResetBinding,
-    help = PrintHelp,
+    reset = function() AltSort:ResetBinding() end,
+    help = function() AltSort:PrintHelp() end,
 }
 
-SLASH_ALTSORT1 = "/altsort"
-SlashCmdList["ALTSORT"] = function(msg)
+function AltSort:OnSlashCommand(msg)
     local command = (msg or ""):match("^%s*(.-)%s*$"):lower()
     local handler = COMMANDS[command]
     if handler then
         handler()
     else
-        PrintHelp()
+        self:PrintHelp()
     end
 end
-frame:RegisterEvent("PLAYER_LOGIN")
-frame:RegisterEvent("PLAYER_REGEN_ENABLED")
-frame:RegisterEvent("PLAYER_INTERACTION_MANAGER_FRAME_SHOW")
-frame:RegisterEvent("PLAYER_INTERACTION_MANAGER_FRAME_HIDE")
-frame:RegisterEvent("BANKFRAME_OPENED")
-frame:RegisterEvent("BANKFRAME_CLOSED")
 
-frame:SetScript("OnEvent", function(self, event, arg1)
-    if event == "PLAYER_INTERACTION_MANAGER_FRAME_SHOW" then
-        OnInteractionShow(arg1)
-        return
-    elseif event == "PLAYER_INTERACTION_MANAGER_FRAME_HIDE" then
-        OnInteractionHide(arg1)
-        return
-    elseif event == "BANKFRAME_OPENED" then
-        bankOpen, bankKind = true, bankKind or "character"
-        return
-    elseif event == "BANKFRAME_CLOSED" then
-        bankOpen, bankKind = false, nil
-        return
-    end
+function AltSort:PLAYER_INTERACTION_MANAGER_FRAME_SHOW(_, interactionType)
+    OnInteractionShow(interactionType)
+end
 
-    InitDB()
+function AltSort:PLAYER_INTERACTION_MANAGER_FRAME_HIDE(_, interactionType)
+    OnInteractionHide(interactionType)
+end
 
-    if TrySeedBinding() then
-        self:UnregisterEvent("PLAYER_LOGIN")
+function AltSort:BANKFRAME_OPENED()
+    bankOpen, bankKind = true, bankKind or "character"
+end
+
+function AltSort:BANKFRAME_CLOSED()
+    bankOpen, bankKind = false, nil
+end
+
+function AltSort:PLAYER_REGEN_ENABLED()
+    if self:TrySeedBinding() then
         self:UnregisterEvent("PLAYER_REGEN_ENABLED")
     end
-end)
+end
+
+function AltSort:OnInitialize()
+    self:InitDB()
+    self:RegisterChatCommand("altsort", "OnSlashCommand")
+end
+
+-- AceAddon enables us at PLAYER_LOGIN, which is when the binding APIs are ready.
+function AltSort:OnEnable()
+    self:RegisterEvent("PLAYER_INTERACTION_MANAGER_FRAME_SHOW")
+    self:RegisterEvent("PLAYER_INTERACTION_MANAGER_FRAME_HIDE")
+    self:RegisterEvent("BANKFRAME_OPENED")
+    self:RegisterEvent("BANKFRAME_CLOSED")
+
+    if not self:TrySeedBinding() then
+        self:RegisterEvent("PLAYER_REGEN_ENABLED")
+    end
+end
