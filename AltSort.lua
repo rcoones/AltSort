@@ -13,8 +13,11 @@ local DB_DEFAULTS = {
         dbVersion = DB_VERSION,
         seeded = false,
         conflictNotified = false,
+        sortOrder = "ascending",
     },
 }
+
+local SORT_ORDERS = { ascending = true, descending = true }
 
 local function Print(msg)
     print("|cff33ff99AltSort:|r " .. msg)
@@ -115,6 +118,13 @@ local function DoSort(requireBank)
         return
     end
 
+    -- "descending" packs items from the last slot backwards (Blizzard's
+    -- right-to-left option). Reapplied on every sort so it always matches the
+    -- saved setting. Only bags honour it; skipped where the client has no toggle.
+    if C_Container and C_Container.SetSortBagsRightToLeft then
+        pcall(C_Container.SetSortBagsRightToLeft, AltSort:GetSortOrder() == "descending")
+    end
+
     local ok, err = pcall(sort)
     if not ok then
         Print(L["Sorting failed: %s"]:format(tostring(err)))
@@ -151,6 +161,51 @@ function AltSort:InitDB()
     if legacy.conflictNotified then
         self.db.global.conflictNotified = true
     end
+end
+
+function AltSort:GetSortOrder()
+    local order = self.db.global.sortOrder
+    if not SORT_ORDERS[order] then
+        return "ascending"
+    end
+    return order
+end
+
+-- Returns false for anything that isn't a known order. Also moves the Settings
+-- panel's dropdown along when the change came from the slash command.
+function AltSort:SetSortOrder(order)
+    if not SORT_ORDERS[order] then
+        return false
+    end
+    self.db.global.sortOrder = order
+    if self.sortOrderSetting then
+        pcall(self.sortOrderSetting.SetValue, self.sortOrderSetting, order)
+    end
+    return true
+end
+
+-- Adds Alt Sort to the game's Settings window. Uses Blizzard's own Settings API
+-- (no extra libraries); clients without it just keep the slash command.
+function AltSort:RegisterOptions()
+    if not (Settings and Settings.RegisterVerticalLayoutCategory and Settings.RegisterAddOnSetting
+        and Settings.CreateDropdown and Settings.RegisterAddOnCategory) then
+        return
+    end
+
+    local category = Settings.RegisterVerticalLayoutCategory(L["Alt Sort"])
+    local setting = Settings.RegisterAddOnSetting(category, "ALTSORT_SORT_ORDER", "sortOrder", self.db.global,
+        Settings.VarType.String, L["Sort order"], "ascending")
+
+    local function GetOptions()
+        local container = Settings.CreateControlTextContainer()
+        container:Add("ascending", L["Ascending"])
+        container:Add("descending", L["Descending"])
+        return container:GetData()
+    end
+    Settings.CreateDropdown(category, setting, GetOptions,
+        L["Ascending fills bags from the first slot. Descending fills them from the last slot."])
+    Settings.RegisterAddOnCategory(category)
+    self.sortOrderSetting = setting
 end
 
 -- Seed the default keyboard hotkey. Once it succeeds the user owns the binding
@@ -206,6 +261,8 @@ end
 function AltSort:PrintHelp()
     Print(L["/altsort sort - sort bags, or the bank if it is open (same as %s)"]:format(DEFAULT_KEY))
     Print(L["/altsort bank - sort the bank (must be open)"])
+    Print(L["/altsort order <ascending|descending> - set the sort order (currently: %s)"]
+        :format(L[self:GetSortOrder()]))
     Print(L["/altsort reset - re-apply the default %s binding"]:format(DEFAULT_KEY))
     Print(L["/altsort help - show this list"])
 end
@@ -213,15 +270,24 @@ end
 local COMMANDS = {
     sort = function() DoSort(false) end,
     bank = function() DoSort(true) end,
+    order = function(arg)
+        if arg == "" then
+            Print(L["Sort order: %s"]:format(L[AltSort:GetSortOrder()]))
+        elseif AltSort:SetSortOrder(arg) then
+            Print(L["Sort order: %s"]:format(L[arg]))
+        else
+            Print(L["Use /altsort order ascending or /altsort order descending."])
+        end
+    end,
     reset = function() AltSort:ResetBinding() end,
     help = function() AltSort:PrintHelp() end,
 }
 
 function AltSort:OnSlashCommand(msg)
-    local command = (msg or ""):match("^%s*(.-)%s*$"):lower()
+    local command, arg = (msg or ""):lower():match("^%s*(%S*)%s*(.-)%s*$")
     local handler = COMMANDS[command]
     if handler then
-        handler()
+        handler(arg)
     else
         self:PrintHelp()
     end
@@ -252,6 +318,7 @@ end
 function AltSort:OnInitialize()
     self:InitDB()
     self:RegisterChatCommand("altsort", "OnSlashCommand")
+    self:RegisterOptions()
 end
 
 -- AceAddon enables us at PLAYER_LOGIN, which is when the binding APIs are ready.

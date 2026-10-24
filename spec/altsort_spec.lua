@@ -10,7 +10,7 @@ local STUBBED = {
     "BINDING_HEADER_ALTSORT", "BINDING_NAME_ALTSORT_SORT",
     "LibStub", "geterrorhandler", "IsLoggedIn", "GetLocale", "GetRealmName",
     "UnitName", "UnitClass", "UnitRace", "UnitFactionGroup", "GetCurrentRegion",
-    "securecallfunction", "DEFAULT_CHAT_FRAME",
+    "securecallfunction", "DEFAULT_CHAT_FRAME", "Settings",
 }
 
 local LIBS = {
@@ -140,8 +140,42 @@ describe("AltSort", function()
                 SortBags = function() client.sortCalls = client.sortCalls + 1 end,
                 SortBankBags = function() client.bankSortCalls = client.bankSortCalls + 1 end,
                 SortAccountBankBags = function() client.accountBankSortCalls = client.accountBankSortCalls + 1 end,
+                SetSortBagsRightToLeft = function(value) client.rightToLeft = value end,
             })
         end
+        if opts.settings ~= false then
+            client.settings = { categories = {}, registered = {}, dropdowns = 0 }
+            local text = {
+                Add = function(self, value, label) self.data[#self.data + 1] = { value = value, label = label } end,
+                GetData = function(self) return self.data end,
+            }
+            text.__index = text
+            setglobal("Settings", {
+                VarType = { String = "string" },
+                RegisterVerticalLayoutCategory = function(name)
+                    local category = { name = name }
+                    client.settings.category = category
+                    return category
+                end,
+                RegisterAddOnSetting = function(category, variable, key, tbl, varType, name, default)
+                    local setting = { category = category, variable = variable, key = key, tbl = tbl,
+                        varType = varType, name = name, default = default }
+                    function setting:SetValue(value) self.tbl[self.key] = value end
+                    client.settings.setting = setting
+                    return setting
+                end,
+                CreateControlTextContainer = function() return setmetatable({ data = {} }, text) end,
+                CreateDropdown = function(_, _, optionsFunc, tooltip)
+                    client.settings.dropdowns = client.settings.dropdowns + 1
+                    client.settings.options = optionsFunc()
+                    client.settings.tooltip = tooltip
+                end,
+                RegisterAddOnCategory = function(category)
+                    client.settings.registered[#client.settings.registered + 1] = category
+                end,
+            })
+        end
+
         if opts.legacySort then
             setglobal("SortBags", function() client.legacySortCalls = client.legacySortCalls + 1 end)
         end
@@ -454,7 +488,7 @@ describe("AltSort", function()
         it("help lists the commands without sorting", function()
             load_addon()
             slash("help")
-            assert.are.equal(4, #client.printed)
+            assert.are.equal(5, #client.printed)
             assert.are.equal(0, client.sortCalls)
         end)
 
@@ -462,7 +496,7 @@ describe("AltSort", function()
             load_addon()
             slash("")
             slash("frobnicate")
-            assert.are.equal(8, #client.printed)
+            assert.are.equal(10, #client.printed)
             assert.are.equal(0, client.sortCalls)
         end)
 
@@ -497,6 +531,91 @@ describe("AltSort", function()
             client.combat = false
             fire("PLAYER_REGEN_ENABLED")
             assert.are.equal("ALTSORT_SORT", client.bound["ALT-S"])
+        end)
+    end)
+
+    describe("sort order", function()
+        local function slash(msg)
+            addon():OnSlashCommand(msg)
+        end
+
+        it("defaults to ascending and tells Blizzard not to sort right to left", function()
+            load_addon()
+            assert.are.equal("ascending", addon():GetSortOrder())
+            AltSort_Sort()
+            assert.is_false(client.rightToLeft)
+            assert.are.equal(1, client.sortCalls)
+        end)
+
+        it("sorts right to left when descending", function()
+            load_addon({ db = { global = { sortOrder = "descending" } } })
+            AltSort_Sort()
+            assert.is_true(client.rightToLeft)
+        end)
+
+        it("treats an unknown saved value as ascending", function()
+            load_addon({ db = { global = { sortOrder = "sideways" } } })
+            assert.are.equal("ascending", addon():GetSortOrder())
+            AltSort_Sort()
+            assert.is_false(client.rightToLeft)
+        end)
+
+        it("still sorts on clients without the direction toggle", function()
+            load_addon({ container = "noBank" })
+            AltSort_Sort()
+            assert.are.equal(1, client.sortCalls)
+            assert.are.equal(0, #client.printed)
+        end)
+
+        it("/altsort order descending switches direction and persists it", function()
+            load_addon()
+            slash("order descending")
+            assert.are.equal("descending", addon().db.global.sortOrder)
+            AltSort_Sort()
+            assert.is_true(client.rightToLeft)
+            slash("  ORDER   Ascending ")
+            assert.are.equal("ascending", addon().db.global.sortOrder)
+            AltSort_Sort()
+            assert.is_false(client.rightToLeft)
+        end)
+
+        it("/altsort order reports the current order without changing it", function()
+            load_addon()
+            slash("order")
+            assert.is_truthy(client.printed[1]:find("ascending", 1, true))
+            assert.are.equal("ascending", addon().db.global.sortOrder)
+        end)
+
+        it("/altsort order rejects an unknown value", function()
+            load_addon()
+            slash("order sideways")
+            assert.are.equal("ascending", addon().db.global.sortOrder)
+            assert.are.equal(1, #client.printed)
+        end)
+
+        it("registers a Settings dropdown bound to the saved value", function()
+            load_addon()
+            local settings = client.settings
+            assert.are.equal("Alt Sort", settings.category.name)
+            assert.are.equal(1, settings.dropdowns)
+            assert.are.same({ settings.category }, settings.registered)
+            assert.are.equal("ascending", settings.setting.default)
+            assert.are.equal(addon().db.global, settings.setting.tbl)
+            assert.are.equal("sortOrder", settings.setting.key)
+            assert.are.same({ "ascending", "descending" }, { settings.options[1].value, settings.options[2].value })
+        end)
+
+        it("the slash command keeps the Settings control in step", function()
+            load_addon()
+            slash("order descending")
+            assert.are.equal("descending", client.settings.setting.tbl[client.settings.setting.key])
+        end)
+
+        it("works on clients without the Settings API", function()
+            load_addon({ settings = false })
+            slash("order descending")
+            AltSort_Sort()
+            assert.is_true(client.rightToLeft)
         end)
     end)
 
