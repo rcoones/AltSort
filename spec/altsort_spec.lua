@@ -23,6 +23,11 @@ local LIBS = {
     "Libs/AceLocale-3.0/AceLocale-3.0.lua",
     "Locales/enUS.lua",
 }
+-- Every other client locale; enUS must load first since it is the default.
+local LOCALES = { "deDE", "esES", "esMX", "frFR", "itIT", "koKR", "ptBR", "ruRU", "zhCN", "zhTW" }
+for _, locale in ipairs(LOCALES) do
+    LIBS[#LIBS + 1] = "Locales/" .. locale .. ".lua"
+end
 
 local plainXpcall = xpcall
 
@@ -42,7 +47,7 @@ describe("AltSort", function()
     end
 
     -- Builds the fake client and logs in. opts: login (false to stop before
-    -- ADDON_LOADED/PLAYER_LOGIN), db, combat, cursor, bound, setBindingFails,
+    -- ADDON_LOADED/PLAYER_LOGIN), locale (client locale, default enUS), db, combat, cursor, bound, setBindingFails,
     -- container ("none" | "error" | "noBank" | default working), legacySort,
     -- enum (false to simulate a client without Enum.PlayerInteractionType).
     local function load_addon(opts)
@@ -82,7 +87,7 @@ describe("AltSort", function()
             return function(err) client.errors[#client.errors + 1] = tostring(err) end
         end)
         setglobal("IsLoggedIn", function() return loggedIn end)
-        setglobal("GetLocale", function() return "enUS" end)
+        setglobal("GetLocale", function() return opts.locale or "enUS" end)
         setglobal("GetRealmName", function() return "Realm" end)
         setglobal("UnitName", function() return "Player" end)
         setglobal("UnitClass", function() return "Warrior", "WARRIOR" end)
@@ -503,12 +508,21 @@ describe("AltSort", function()
             return text
         end
 
-        it("defines every string AltSort.lua looks up in the enUS locale", function()
-            local defined = {}
-            for key in read("Locales/enUS.lua"):gmatch('L%["(.-)"%] = true') do
-                defined[key] = true
+        -- Ordered list of the %-specifiers in a string, e.g. "%s,%s".
+        local function specifiers(text)
+            local found = {}
+            for spec in text:gmatch("%%%a") do
+                found[#found + 1] = spec
             end
+            return table.concat(found, ",")
+        end
 
+        local defined = {}
+        for key in read("Locales/enUS.lua"):gmatch('L%["(.-)"%] = true') do
+            defined[key] = true
+        end
+
+        it("defines every string AltSort.lua looks up in the enUS locale", function()
             local missing = {}
             for key in read("AltSort.lua"):gmatch('L%["(.-)"%]') do
                 if not defined[key] then
@@ -523,5 +537,42 @@ describe("AltSort", function()
             assert.are.equal("Alt Sort", BINDING_HEADER_ALTSORT)
             assert.are.equal("Sort Bags / Bank", BINDING_NAME_ALTSORT_SORT)
         end)
+
+        it("uses the client's locale and keeps the addon name in English", function()
+            load_addon({ locale = "deDE", combat = true })
+            assert.are.equal("Alt Sort", BINDING_HEADER_ALTSORT)
+            assert.are.equal("Taschen / Bank sortieren", BINDING_NAME_ALTSORT_SORT)
+
+            AltSort_Sort()
+            assert.is_truthy(client.printed[1]:find("Im Kampf kann nicht sortiert werden.", 1, true))
+        end)
+
+        for _, locale in ipairs(LOCALES) do
+            describe(locale, function()
+                local translations = {}
+                for key, value in read("Locales/" .. locale .. ".lua"):gmatch('L%["(.-)"%] = "(.-)"\n') do
+                    translations[key] = value
+                end
+
+                it("is listed in the .toc", function()
+                    assert.is_truthy(read("AltSort.toc"):find("Locales\\" .. locale .. ".lua", 1, true))
+                end)
+
+                it("only translates known strings, keeping their %s placeholders", function()
+                    for key, value in pairs(translations) do
+                        assert.is_true(defined[key], "unknown key: " .. key)
+                        assert.are.equal(specifiers(key), specifiers(value), "placeholders differ: " .. key)
+                    end
+                end)
+
+                it("translates every string except the addon name", function()
+                    for key in pairs(defined) do
+                        if key ~= "Alt Sort" then
+                            assert.is_not_nil(translations[key], "missing: " .. key)
+                        end
+                    end
+                end)
+            end)
+        end
     end)
 end)

@@ -37,3 +37,8 @@ files["spec"] = {
     std = "+busted",
     globals = { "SLASH_ACECONSOLE_ALTSORT1", "SlashCmdList" },
 }
+
+-- Translated strings are one line each and can't be wrapped
+files["Locales"] = {
+    max_line_length = false,
+}
