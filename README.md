@@ -33,3 +33,9 @@ The key binding is all most people need, but `/altsort` is there if you prefer t
 | `/altsort bank` | Sorts the bank. Does nothing but tell you so if no bank is open. |
 | `/altsort reset` | Re-applies the default **Alt+S** binding, if that key is free. |
 | `/altsort help` | Lists these commands. `/altsort` on its own does the same. |
+
+## Development
+
+Alt Sort is built on [Ace3](https://github.com/WoWUIDev/Ace3) (AceAddon, AceEvent, AceConsole, AceDB, AceLocale). The libraries are vendored in `Libs/` (Ace3 release r1403), so a plain checkout runs as-is. To update them, copy the same folders from a newer Ace3 release.
+
+User-facing strings live in `Locales/`. `enUS.lua` is the source of truth; to add a language, create `Locales/<locale>.lua` that starts with `LibStub("AceLocale-3.0"):NewLocale("AltSort", "<locale>")`, fill in the translations, and list the file in `AltSort.toc` after `enUS.lua`.

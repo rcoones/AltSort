@@ -1,22 +1,48 @@
 -- Unit tests for AltSort. The WoW API is stubbed; each test loads a fresh copy
--- of AltSort.lua against a fresh fake client.
+-- of the vendored Ace3 libs and AltSort.lua against a fresh fake client, then
+-- fires ADDON_LOADED and PLAYER_LOGIN the way the game would.
 
 local STUBBED = {
     "AltSortDB", "AltSort_Sort", "C_Container", "SortBags", "CreateFrame",
     "InCombatLockdown", "GetCursorInfo", "GetBindingAction", "SetBinding",
     "SaveBindings", "GetCurrentBindingSet", "print", "Enum",
-    "BankFrame", "BankPanel", "SlashCmdList", "SLASH_ALTSORT1",
+    "BankFrame", "BankPanel", "SlashCmdList", "SLASH_ACECONSOLE_ALTSORT1",
     "BINDING_HEADER_ALTSORT", "BINDING_NAME_ALTSORT_SORT",
+    "LibStub", "geterrorhandler", "IsLoggedIn", "GetLocale", "GetRealmName",
+    "UnitName", "UnitClass", "UnitRace", "UnitFactionGroup", "GetCurrentRegion",
+    "securecallfunction", "DEFAULT_CHAT_FRAME",
 }
+
+local LIBS = {
+    "Libs/LibStub/LibStub.lua",
+    "Libs/CallbackHandler-1.0/CallbackHandler-1.0.lua",
+    "Libs/AceAddon-3.0/AceAddon-3.0.lua",
+    "Libs/AceEvent-3.0/AceEvent-3.0.lua",
+    "Libs/AceConsole-3.0/AceConsole-3.0.lua",
+    "Libs/AceDB-3.0/AceDB-3.0.lua",
+    "Libs/AceLocale-3.0/AceLocale-3.0.lua",
+    "Locales/enUS.lua",
+}
+
+local plainXpcall = xpcall
 
 local function setglobal(name, value)
     _G[name] = value
 end
 
 describe("AltSort", function()
-    local saved, client, frame
+    local saved, client, frames, loggedIn
 
-    -- Builds the fake client. opts: db, combat, cursor, bound, setBindingFails,
+    local function fire(event, ...)
+        for _, frame in ipairs(frames) do
+            if frame.events[event] and frame.scripts.OnEvent then
+                frame.scripts.OnEvent(frame, event, ...)
+            end
+        end
+    end
+
+    -- Builds the fake client and logs in. opts: login (false to stop before
+    -- ADDON_LOADED/PLAYER_LOGIN), db, combat, cursor, bound, setBindingFails,
     -- container ("none" | "error" | "noBank" | default working), legacySort,
     -- enum (false to simulate a client without Enum.PlayerInteractionType).
     local function load_addon(opts)
@@ -33,19 +59,42 @@ describe("AltSort", function()
             bankSortCalls = 0,
             accountBankSortCalls = 0,
             printed = {},
+            errors = {}, -- anything the libs hand to the error handler (they swallow it otherwise)
         }
-        frame = { events = {}, scripts = {}, unregistered = false }
+        frames = {}
+        loggedIn = false
 
-        function frame:RegisterEvent(event) self.events[event] = true end
-        function frame:UnregisterEvent(event) self.events[event] = nil end
-        function frame:SetScript(name, fn) self.scripts[name] = fn end
-        function frame:UnregisterAllEvents()
-            self.events = {}
-            self.unregistered = true
+        -- The libs each create their own frame; keep them all so fire() can
+        -- deliver an event to whichever ones registered for it.
+        local function newFrame()
+            local frame = { events = {}, scripts = {} }
+            function frame:RegisterEvent(event) self.events[event] = true end
+            function frame:UnregisterEvent(event) self.events[event] = nil end
+            function frame:UnregisterAllEvents() self.events = {} end
+            function frame:SetScript(name, fn) self.scripts[name] = fn end
+            frames[#frames + 1] = frame
+            return frame
         end
 
         setglobal("AltSortDB", opts.db)
-        setglobal("CreateFrame", function() return frame end)
+        setglobal("CreateFrame", newFrame)
+        setglobal("geterrorhandler", function()
+            return function(err) client.errors[#client.errors + 1] = tostring(err) end
+        end)
+        setglobal("IsLoggedIn", function() return loggedIn end)
+        setglobal("GetLocale", function() return "enUS" end)
+        setglobal("GetRealmName", function() return "Realm" end)
+        setglobal("UnitName", function() return "Player" end)
+        setglobal("UnitClass", function() return "Warrior", "WARRIOR" end)
+        setglobal("UnitRace", function() return "Human", "Human" end)
+        setglobal("UnitFactionGroup", function() return "Alliance" end)
+        setglobal("GetCurrentRegion", function() return 1 end)
+        setglobal("securecallfunction", function(f, ...) return f(...) end)
+        -- Stock Lua 5.1's xpcall takes no extra arguments; WoW's does.
+        setglobal("xpcall", function(f, handler, ...)
+            local args = { n = select("#", ...), ... }
+            return plainXpcall(function() return f(unpack(args, 1, args.n)) end, handler)
+        end)
         setglobal("InCombatLockdown", function() return client.combat end)
         setglobal("GetCursorInfo", function() return client.cursor end)
         setglobal("GetBindingAction", function(key) return client.bound[key] or "" end)
@@ -92,11 +141,26 @@ describe("AltSort", function()
             setglobal("SortBags", function() client.legacySortCalls = client.legacySortCalls + 1 end)
         end
 
+        for _, path in ipairs(LIBS) do
+            dofile(path)
+        end
         dofile("AltSort.lua")
+
+        if opts.login ~= false then
+            fire("ADDON_LOADED", "AltSort")
+            loggedIn = true
+            fire("PLAYER_LOGIN")
+            assert.are.same({}, client.errors)
+        end
     end
 
-    local function fire(event, arg1)
-        frame.scripts.OnEvent(frame, event, arg1)
+    local function addon()
+        return LibStub("AceAddon-3.0"):GetAddon("AltSort")
+    end
+
+    -- Whether AltSort still wants this event (AceEvent's frame holds the registrations).
+    local function registered(event)
+        return LibStub("AceEvent-3.0").frame.events[event] == true
     end
 
     before_each(function()
@@ -108,6 +172,7 @@ describe("AltSort", function()
     end)
 
     after_each(function()
+        _G.xpcall = plainXpcall
         for _, name in ipairs(STUBBED) do
             _G[name] = saved[name]
         end
@@ -158,78 +223,84 @@ describe("AltSort", function()
     describe("saved variables", function()
         it("creates a versioned table when none exists", function()
             load_addon()
-            fire("PLAYER_LOGIN")
             assert.are.equal("table", type(AltSortDB))
-            assert.is_not_nil(AltSortDB.version)
+            assert.is_not_nil(addon().db.global.dbVersion)
         end)
 
         it("replaces a corrupt non-table value", function()
             load_addon({ db = "garbage" })
-            fire("PLAYER_LOGIN")
             assert.are.equal("table", type(AltSortDB))
+            assert.is_not_nil(addon().db)
         end)
 
-        it("keeps existing data", function()
-            load_addon({ db = { version = 1, custom = "x" } })
-            fire("PLAYER_LOGIN")
+        it("keeps unrelated existing data", function()
+            load_addon({ db = { custom = "x" } })
             assert.are.equal("x", AltSortDB.custom)
+        end)
+
+        it("migrates the pre-AceDB top-level flags into db.global", function()
+            load_addon({ db = { version = 1, seeded = true, conflictNotified = true } })
+            assert.is_true(addon().db.global.seeded)
+            assert.is_true(addon().db.global.conflictNotified)
+            assert.is_nil(AltSortDB.seeded)
+            assert.is_nil(AltSortDB.conflictNotified)
+            assert.is_nil(AltSortDB.version)
+        end)
+
+        it("does not re-seed the key for someone who already seeded and then cleared it", function()
+            load_addon({ db = { seeded = true } })
+            assert.are.equal(0, client.setBindingCalls)
+            assert.is_nil(client.bound["ALT-S"])
         end)
     end)
 
     describe("default key seeding", function()
         it("binds ALT-S when it is free", function()
             load_addon()
-            fire("PLAYER_LOGIN")
             assert.are.equal("ALTSORT_SORT", client.bound["ALT-S"])
             assert.are.equal(1, client.saveCalls)
-            assert.is_true(AltSortDB.seeded)
-            assert.is_nil(frame.events["PLAYER_LOGIN"])
-            assert.is_nil(frame.events["PLAYER_REGEN_ENABLED"])
+            assert.is_true(addon().db.global.seeded)
+            assert.is_false(registered("PLAYER_REGEN_ENABLED"))
         end)
 
         it("does nothing once seeded", function()
             load_addon({ db = { seeded = true } })
-            fire("PLAYER_LOGIN")
             assert.are.equal(0, client.setBindingCalls)
-            assert.is_nil(frame.events["PLAYER_LOGIN"])
+            assert.is_false(registered("PLAYER_REGEN_ENABLED"))
         end)
 
         it("treats an existing AltSort binding as done without rebinding", function()
             load_addon({ bound = { ["ALT-S"] = "ALTSORT_SORT" } })
-            fire("PLAYER_LOGIN")
             assert.are.equal(0, client.setBindingCalls)
-            assert.is_true(AltSortDB.seeded)
+            assert.is_true(addon().db.global.seeded)
         end)
 
         it("leaves a taken key alone and notifies only once", function()
             load_addon({ bound = { ["ALT-S"] = "SOMETHING_ELSE" } })
-            fire("PLAYER_LOGIN")
             fire("PLAYER_REGEN_ENABLED")
             assert.are.equal("SOMETHING_ELSE", client.bound["ALT-S"])
             assert.are.equal(0, client.setBindingCalls)
-            assert.is_falsy(AltSortDB.seeded)
+            assert.is_falsy(addon().db.global.seeded)
             assert.are.equal(1, #client.printed)
         end)
 
         it("waits for combat to end", function()
             load_addon({ combat = true })
-            fire("PLAYER_LOGIN")
             assert.are.equal(0, client.setBindingCalls)
-            assert.is_falsy(AltSortDB.seeded)
-            assert.is_true(frame.events["PLAYER_LOGIN"])
+            assert.is_falsy(addon().db.global.seeded)
+            assert.is_true(registered("PLAYER_REGEN_ENABLED"))
 
             client.combat = false
             fire("PLAYER_REGEN_ENABLED")
             assert.are.equal("ALTSORT_SORT", client.bound["ALT-S"])
-            assert.is_true(AltSortDB.seeded)
+            assert.is_true(addon().db.global.seeded)
         end)
 
         it("does not mark seeded or save when SetBinding fails", function()
             load_addon({ setBindingFails = true })
-            fire("PLAYER_LOGIN")
             assert.are.equal(0, client.saveCalls)
-            assert.is_falsy(AltSortDB.seeded)
-            assert.is_true(frame.events["PLAYER_LOGIN"])
+            assert.is_falsy(addon().db.global.seeded)
+            assert.is_true(registered("PLAYER_REGEN_ENABLED"))
         end)
     end)
 
@@ -324,13 +395,13 @@ describe("AltSort", function()
 
     describe("/altsort slash command", function()
         local function slash(msg)
-            SlashCmdList["ALTSORT"](msg)
+            SlashCmdList["ACECONSOLE_ALTSORT"](msg)
         end
 
         it("registers /altsort", function()
             load_addon()
-            assert.are.equal("/altsort", SLASH_ALTSORT1)
-            assert.are.equal("function", type(SlashCmdList["ALTSORT"]))
+            assert.are.equal("/altsort", SLASH_ACECONSOLE_ALTSORT1)
+            assert.are.equal("function", type(SlashCmdList["ACECONSOLE_ALTSORT"]))
         end)
 
         it("sort sorts bags when no bank is open", function()
@@ -392,25 +463,23 @@ describe("AltSort", function()
 
         it("reset re-applies the default binding and registers events again", function()
             load_addon()
-            fire("PLAYER_LOGIN")
-            assert.is_true(AltSortDB.seeded)
+            assert.is_true(addon().db.global.seeded)
             client.bound["ALT-S"] = nil
 
             slash("reset")
             assert.are.equal("ALTSORT_SORT", client.bound["ALT-S"])
-            assert.is_true(AltSortDB.seeded)
+            assert.is_true(addon().db.global.seeded)
             assert.are.equal(2, client.setBindingCalls)
         end)
 
         it("reset retries the notification when the key is taken", function()
             load_addon({ bound = { ["ALT-S"] = "SOMETHING_ELSE" } })
-            fire("PLAYER_LOGIN")
             assert.are.equal(1, #client.printed)
 
             slash("reset")
             assert.are.equal("SOMETHING_ELSE", client.bound["ALT-S"])
-            assert.is_falsy(AltSortDB.seeded)
-            assert.is_true(frame.events["PLAYER_LOGIN"])
+            assert.is_falsy(addon().db.global.seeded)
+            assert.is_true(registered("PLAYER_REGEN_ENABLED"))
             assert.are.equal(2, #client.printed)
         end)
 
@@ -418,11 +487,41 @@ describe("AltSort", function()
             load_addon({ combat = true })
             slash("reset")
             assert.are.equal(0, client.setBindingCalls)
-            assert.is_true(frame.events["PLAYER_REGEN_ENABLED"])
+            assert.is_true(registered("PLAYER_REGEN_ENABLED"))
 
             client.combat = false
             fire("PLAYER_REGEN_ENABLED")
             assert.are.equal("ALTSORT_SORT", client.bound["ALT-S"])
+        end)
+    end)
+
+    describe("localization", function()
+        local function read(path)
+            local file = assert(io.open(path))
+            local text = file:read("*a")
+            file:close()
+            return text
+        end
+
+        it("defines every string AltSort.lua looks up in the enUS locale", function()
+            local defined = {}
+            for key in read("Locales/enUS.lua"):gmatch('L%["(.-)"%] = true') do
+                defined[key] = true
+            end
+
+            local missing = {}
+            for key in read("AltSort.lua"):gmatch('L%["(.-)"%]') do
+                if not defined[key] then
+                    missing[#missing + 1] = key
+                end
+            end
+            assert.are.same({}, missing)
+        end)
+
+        it("sets the Key Bindings menu strings from the locale", function()
+            load_addon()
+            assert.are.equal("Alt Sort", BINDING_HEADER_ALTSORT)
+            assert.are.equal("Sort Bags / Bank", BINDING_NAME_ALTSORT_SORT)
         end)
     end)
 end)

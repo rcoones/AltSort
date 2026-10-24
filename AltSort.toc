@@ -10,4 +10,6 @@
 
 ## IconTexture: Interface\Addons\AltSort\AltSort.tga
 
+Libs\Libs.xml
+Locales\enUS.lua
 AltSort.lua

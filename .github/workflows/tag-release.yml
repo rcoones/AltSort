@@ -71,7 +71,7 @@ jobs:
           VERSION: ${{ needs.tag.outputs.tag }}
         run: |
           mkdir -p build/AltSort
-          cp AltSort.lua AltSort.toc Bindings.xml LICENSE.md build/AltSort/
+          cp -r AltSort.lua AltSort.toc Bindings.xml LICENSE.md Libs Locales build/AltSort/
           sed -i "s/@project-version@/${VERSION}/" build/AltSort/AltSort.toc
           cd build
           zip -r "AltSort-${VERSION}.zip" AltSort
