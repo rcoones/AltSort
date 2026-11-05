@@ -8,7 +8,7 @@ A tiny World of Warcraft addon that sorts your bags with **Alt+S**.
 - Open your bank (or the warband bank) and press **Alt+S** to sort it instead — same key, no extra bindings.
 - Uses Blizzard's built-in sorting functionality.
 - Rebindable in **Key Bindings > Alt Sort**.
-- Choose ascending or descending sort order in **Options > AddOns > Alt Sort**, or with `/altsort order`.
+- Choose ascending or descending sort order in **Options > AddOns > Alt Sort**, or with `/altsort order` (not available in WoW Forever).
 - Optional `/altsort` slash command (see below).
 - Extremely lightweight.
 
@@ -38,7 +38,7 @@ The key binding is all most people need, but `/altsort` is there if you prefer t
 
 ## Sort order
 
-**Ascending** (the default) is Blizzard's normal behavior: sorted items fill your bags from the first slot. **Descending** uses Blizzard's right-to-left option, so they fill from the last slot instead. The setting applies to bags; the bank sort calls have no direction option.
+**Ascending** (the default) is Blizzard's normal behavior: sorted items fill your bags from the first slot. **Descending** uses Blizzard's right-to-left option, so they fill from the last slot instead. The setting applies to bags; the bank sort calls have no direction option. WoW Forever ignores the right-to-left option, so there the setting, its Settings section and `/altsort order` are left out.
 
 ## Development
 

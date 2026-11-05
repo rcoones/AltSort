@@ -23,6 +23,7 @@ read_globals = {
     "CreateFrame",
     "Enum",
     "GetBindingAction",
+    "GetBuildInfo",
     "GetCurrentBindingSet",
     "GetCursorInfo",
     "InCombatLockdown",

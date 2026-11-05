@@ -10,7 +10,7 @@ local STUBBED = {
     "BINDING_HEADER_ALTSORT", "BINDING_NAME_ALTSORT_SORT",
     "LibStub", "geterrorhandler", "IsLoggedIn", "GetLocale", "GetRealmName",
     "UnitName", "UnitClass", "UnitRace", "UnitFactionGroup", "GetCurrentRegion",
-    "securecallfunction", "DEFAULT_CHAT_FRAME", "Settings",
+    "securecallfunction", "DEFAULT_CHAT_FRAME", "Settings", "GetBuildInfo",
 }
 
 local LIBS = {
@@ -49,7 +49,8 @@ describe("AltSort", function()
     -- Builds the fake client and logs in. opts: login (false to stop before
     -- ADDON_LOADED/PLAYER_LOGIN), locale (client locale, default enUS), db, combat, cursor, bound, setBindingFails,
     -- container ("none" | "error" | "noBank" | default working), legacySort,
-    -- enum (false to simulate a client without Enum.PlayerInteractionType).
+    -- enum (false to simulate a client without Enum.PlayerInteractionType),
+    -- interface (client interface number, default 120107; 16001 is WoW Forever).
     local function load_addon(opts)
         opts = opts or {}
         client = {
@@ -113,6 +114,9 @@ describe("AltSort", function()
         setglobal("GetCurrentBindingSet", function() return 1 end)
         setglobal("print", function(msg) client.printed[#client.printed + 1] = msg end)
         setglobal("SlashCmdList", {})
+        setglobal("GetBuildInfo", function()
+            return "12.1.7", "1", "Jan 1 2026", opts.interface or 120107
+        end)
 
         if opts.enum == false then
             setglobal("Enum", nil)
@@ -616,6 +620,38 @@ describe("AltSort", function()
             slash("order descending")
             AltSort_Sort()
             assert.is_true(client.rightToLeft)
+        end)
+
+        describe("on WoW Forever", function()
+            it("registers no Settings section", function()
+                load_addon({ interface = 16001 })
+                assert.is_nil(client.settings.category)
+                assert.are.equal(0, client.settings.dropdowns)
+                assert.are.same({}, client.settings.registered)
+            end)
+
+            it("treats /altsort order as unknown and shows help instead", function()
+                load_addon({ interface = 16001, db = { global = { sortOrder = "descending" } } })
+                slash("order descending")
+                assert.are.equal("descending", addon().db.global.sortOrder)
+                assert.are.equal(4, #client.printed)
+            end)
+
+            it("leaves order out of the help list", function()
+                load_addon({ interface = 16001 })
+                slash("help")
+                assert.are.equal(4, #client.printed)
+                for _, line in ipairs(client.printed) do
+                    assert.is_nil(line:find("order", 1, true))
+                end
+            end)
+
+            it("never touches the right-to-left option when sorting", function()
+                load_addon({ interface = 16001, db = { global = { sortOrder = "descending" } } })
+                AltSort_Sort()
+                assert.is_nil(client.rightToLeft)
+                assert.are.equal(1, client.sortCalls)
+            end)
         end)
     end)
 
