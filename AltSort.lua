@@ -19,6 +19,12 @@ local DB_DEFAULTS = {
 
 local SORT_ORDERS = { ascending = true, descending = true }
 
+-- WoW Forever (interface 16xxx) ignores Blizzard's right-to-left option, so
+-- there the sort order setting, Settings section and /altsort order are all
+-- left out. Everything else (retail 12.x) supports it.
+local FOREVER_MAX_INTERFACE = 120000
+local SUPPORTS_SORT_ORDER = (select(4, GetBuildInfo()) or FOREVER_MAX_INTERFACE) >= FOREVER_MAX_INTERFACE
+
 local function Print(msg)
     print("|cff33ff99AltSort:|r " .. msg)
 end
@@ -121,7 +127,7 @@ local function DoSort(requireBank)
     -- "descending" packs items from the last slot backwards (Blizzard's
     -- right-to-left option). Reapplied on every sort so it always matches the
     -- saved setting. Only bags honour it; skipped where the client has no toggle.
-    if C_Container and C_Container.SetSortBagsRightToLeft then
+    if SUPPORTS_SORT_ORDER and C_Container and C_Container.SetSortBagsRightToLeft then
         pcall(C_Container.SetSortBagsRightToLeft, AltSort:GetSortOrder() == "descending")
     end
 
@@ -187,6 +193,9 @@ end
 -- Adds Alt Sort to the game's Settings window. Uses Blizzard's own Settings API
 -- (no extra libraries); clients without it just keep the slash command.
 function AltSort:RegisterOptions()
+    if not SUPPORTS_SORT_ORDER then
+        return
+    end
     if not (Settings and Settings.RegisterVerticalLayoutCategory and Settings.RegisterAddOnSetting
         and Settings.CreateDropdown and Settings.RegisterAddOnCategory) then
         return
@@ -261,8 +270,10 @@ end
 function AltSort:PrintHelp()
     Print(L["/altsort sort - sort bags, or the bank if it is open (same as %s)"]:format(DEFAULT_KEY))
     Print(L["/altsort bank - sort the bank (must be open)"])
-    Print(L["/altsort order <ascending|descending> - set the sort order (currently: %s)"]
-        :format(L[self:GetSortOrder()]))
+    if SUPPORTS_SORT_ORDER then
+        Print(L["/altsort order <ascending|descending> - set the sort order (currently: %s)"]
+            :format(L[self:GetSortOrder()]))
+    end
     Print(L["/altsort reset - re-apply the default %s binding"]:format(DEFAULT_KEY))
     Print(L["/altsort help - show this list"])
 end
@@ -282,6 +293,10 @@ local COMMANDS = {
     reset = function() AltSort:ResetBinding() end,
     help = function() AltSort:PrintHelp() end,
 }
+
+if not SUPPORTS_SORT_ORDER then
+    COMMANDS.order = nil
+end
 
 function AltSort:OnSlashCommand(msg)
     local command, arg = (msg or ""):lower():match("^%s*(%S*)%s*(.-)%s*$")
